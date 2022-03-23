@@ -113,6 +113,10 @@ class Client(object):
                 if self.status == 1:
                     m = 'ACK ' + msg
                     self.socket.sendto(m.encode(), clientAddress)
+            elif re.match('OFFLINE MESSAGE (.+)', msg, flags=re.DOTALL):
+                m = re.match('OFFLINE MESSAGE (.+)', msg, flags=re.DOTALL)
+                offMsg = m.groups()[0]
+                print(offMsg)
             else:
                 print('Error: wrong request ' + msg)
             # print('listening 2', prompt, end='')

@@ -60,20 +60,22 @@ class Server(object):
         self.broadcast_table()
         print('broadcast new table to all active clients!')
 
-    def reg(self, name):
-        temp = []
-        with open(self.table, 'r') as csvfile:
-            reader = csv.reader(csvfile)
-            for r in reader:
-                if r[0] != name:
-                    temp.append(r)
-                else:
-                    temp.append(r[0:3] + ['online'])
-        with open(self.table, 'w') as csvfile:
-            writer = csv.writer(csvfile)
-            for t in temp:
-                writer.writerow(t)
+    def reg(self, name, clientAddress):
+        self.write_status(name, 'online')
         self.broadcast_table()
+        f = self.offlineMsg + '_' + name + '.csv'
+        if os.path.exists(f):
+            msg = 'OFFLINE MESSAGE >>> You Have Messages.'
+            with open(f, 'r') as csvfile:
+                reader = csv.reader(csvfile)
+                for r in reader:
+                    msg += '\n>>> %s: <%s> %s' % (r[0],
+                                                  datetime.datetime.fromtimestamp(float(r[1])).strftime('%Y-%m-%d %H:%M:%S'),
+                                                  r[2])
+            self.socket.sendto(msg.encode(), clientAddress)
+            os.remove(f)
+
+
 
     def send_table_copy(self, clientIp, clientPort):
         with open(self.table, 'r') as csvfile:
@@ -179,7 +181,7 @@ class Server(object):
             elif re.match('Reg ([\w]+)', message):
                 m = re.match('Reg ([\w]+)', message)
                 name = m.groups()[0]
-                self.reg(name)
+                self.reg(name, clientAddress)
             elif re.match('SAVE MESSAGE FROM ([\w]+) TO ([\w]+) TIME ([\d.]+) MSG (.+)', message, flags=re.DOTALL):
                 m = re.match('SAVE MESSAGE FROM ([\w]+) TO ([\w]+) TIME ([\d.]+) MSG (.+)', message, flags=re.DOTALL)
                 sender, receiver, t, msg = m.groups()
