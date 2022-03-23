@@ -15,6 +15,7 @@ class Server(object):
         self.socket.bind(('', self.port))
         self.table = './data/serverTable.csv'
         self.offlineMsg = './data/offline'
+        self.check_online_ack = (0, 'null')
 
     def registration(self, name, port, status, clientIp):
         """
@@ -99,25 +100,63 @@ class Server(object):
                 if r[3] == 'online':
                     self.socket.sendto(message.encode(), (r[1], int(r[2])))
 
+    def get_info(self, name):
+        with open(self.table, 'r') as csvfile:
+            reader = csv.reader(csvfile)
+            for r in reader:
+                if r[0] == name:
+                    return r[1], r[2], r[3]
+
+    def write_status(self, name, new_status):
+        temp = []
+        with open(self.table, 'r') as csvfile:
+            reader = csv.reader(csvfile)
+            for r in reader:
+                if r[0] != name:
+                    temp.append(r)
+                else:
+                    temp.append(r[0:3] + [new_status])
+        with open(self.table, 'w') as csvfile:
+            writer = csv.writer(csvfile)
+            for t in temp:
+                writer.writerow(t)
+
+    def check_online(self, name):
+        ip, port, status = self.get_info(name)
+        t1 = time.time()
+        message = "CHECK ONLINE " + str(t1)
+        self.socket.sendto(message.encode(), (ip, int(port)))
+        self.check_online_ack = (1, str(t1))
+        time.sleep(0.5)
+        if self.check_online_ack == (0, 'null'):
+            return True
+        else:
+            self.check_online_ack = (0, 'null')
+            return False
+
     def saveMsg(self, sender, receiver, t, msg, clientAddress):
         """
         check if the receiver is indeed offline. If yes, save the msg and send ack. If not,
         send sender the error info and the table.
         """
-        with open(self.table, 'r') as csvfile:
-            reader = csv.reader(csvfile)
-            for r in reader:
-                if r[0] == receiver and r[3] == 'online':
-                    err = "ACK SAVE MESSAGE [Client %s exists!]" % receiver
-                    self.socket.sendto(err.encode(), clientAddress)
-                    self.broadcast_table()
-                    return False
-        f = self.offlineMsg + '_' + receiver + '.csv'
-        with open(f, 'a') as csvfile:
-            writter = csv.writer(csvfile)
-            writter.writerow([sender, t, msg])
-        ack = "ACK SAVE MESSAGE [Messages received by the server and saved.]"
-        self.socket.sendto(ack.encode(), clientAddress)
+        if self.check_online(receiver):  # the receiver is online
+            err = "ACK SAVE MESSAGE [Client %s exists!]" % receiver
+            self.socket.sendto(err.encode(), clientAddress)
+            _, _, table_status = self.get_info(receiver)
+            if table_status == 'offline':
+                self.write_status(receiver, 'online')
+                self.broadcast_table()
+        else:  # the receiver is offline
+            f = self.offlineMsg + '_' + receiver + '.csv'
+            with open(f, 'a') as csvfile:
+                writter = csv.writer(csvfile)
+                writter.writerow([sender, t, msg])
+            ack = "ACK SAVE MESSAGE [Messages received by the server and saved.]"
+            self.socket.sendto(ack.encode(), clientAddress)
+            _, _, table_status = self.get_info(receiver)
+            if table_status == 'online':
+                self.write_status(receiver, 'offline')
+                self.broadcast_table()
 
     def listening(self):
         print('server listening')
@@ -145,6 +184,11 @@ class Server(object):
                 m = re.match('SAVE MESSAGE FROM ([\w]+) TO ([\w]+) TIME ([\d.]+) MSG (.+)', message, flags=re.DOTALL)
                 sender, receiver, t, msg = m.groups()
                 self.saveMsg(sender, receiver, t, msg, clientAddress)
-
+            elif re.match('ACK CHECK ONLINE ([\d.]+)', message):
+                m = re.match('ACK CHECK ONLINE ([\d.]+)', message)
+                t1 = m.groups()[0]
+                t2 = time.time()
+                if t1 == self.check_online_ack[1] and t2 - float(t1) < 0.5:
+                    self.check_online_ack = (0, 'null')
             else:
                 print('Error: wrong request!')

@@ -22,6 +22,7 @@ class Client(object):
         self.table = './data/localTable_' + self.name + '.csv'
         self.wait_ack = (0, 'null')
         self.dereg_ack = (0, 'null')
+        self.status = 1  # 1. online  0.offline
 
     def registration(self):
         """
@@ -33,6 +34,7 @@ class Client(object):
         # print('sent the registration request!')
 
     def dereg(self):
+        self.status = 0
         for i in range(5):
             t1 = time.time()
             message = "Dereg " + str(t1) + ' ' + self.name
@@ -48,6 +50,7 @@ class Client(object):
     def reg(self):
         message = "Reg " + self.name
         self.socket.sendto(message.encode(), (self.serverIp, self.serverPort))
+        self.status = 1
 
     def recv_table(self, tableData):
         """
@@ -106,6 +109,10 @@ class Client(object):
                 print('>>> ' + m.groups()[0])
             elif re.match('ERROR', msg):
                 print('>>> [' + msg + ']')
+            elif re.match('CHECK ONLINE ([\d.]+)', msg):
+                if self.status == 1:
+                    m = 'ACK ' + msg
+                    self.socket.sendto(m.encode(), clientAddress)
             else:
                 print('Error: wrong request ' + msg)
             # print('listening 2', prompt, end='')
