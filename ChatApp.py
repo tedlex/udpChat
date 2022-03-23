@@ -10,6 +10,9 @@ import datetime
 
 class Client(object):
     def __init__(self, name, port, serverIp, serverPort):
+        """
+        wait_ack: if it is (1, 'timestamp'), it means we are waiting for the ack for the message we sent at this time
+        """
         self.name = name
         self.port = int(port)
         self.serverIp = serverIp
@@ -17,6 +20,7 @@ class Client(object):
         self.socket = socket(AF_INET, SOCK_DGRAM)
         self.socket.bind(('', self.port))
         self.table = './data/localTable_' + self.name + '.csv'
+        self.wait_ack = (0, 'null')
 
     def registration(self):
         """
@@ -40,7 +44,13 @@ class Client(object):
         print(prompt + '[Client table updated.]\n>>> ', end='')
         # print(prompt, end='')
 
-    def recv_msg(self, name, msg):
+    def recv_msg(self, t1, name, msg, clientAddress):
+        """
+        display the message and send ACK back
+        Format of ack is: "ACK MESSAGE "+t1
+        """
+        ack = "ACK MESSAGE " + t1
+        self.socket.sendto(ack.encode(), clientAddress)
         print(prompt + name + ': ' + msg, '\n>>> ', end='')
         # print('>>> ', end='')
 
@@ -57,13 +67,22 @@ class Client(object):
                 #print('groups', m.groups())
                 self.recv_table(m.groups()[0])
             #elif messages[0] == 'Message':
-            elif re.match('Message ([\S]+) (.+)', msg, flags=re.DOTALL):
-                m = re.match('Message ([\S]+) (.+)', msg, flags=re.DOTALL)
-                name, mes = m.groups()
-                self.recv_msg(name, mes)
+            elif re.match('Message ([\d.]+) ([\S]+) (.+)', msg, flags=re.DOTALL):
+                m = re.match('Message ([\d.]+) ([\S]+) (.+)', msg, flags=re.DOTALL)
+                t1, name, mes = m.groups()
+                self.recv_msg(t1, name, mes, clientAddress)
+            elif re.match('ACK MESSAGE ([\d.]+)', msg):
+                m = re.match('ACK MESSAGE ([\d.]+)', msg)
+                t1 = m.groups()[0]
+                t2 = time.time()
+                if t1 == self.wait_ack[1] and t2-float(t1) < 0.5:
+                    self.wait_ack = (0, 'null')
             else:
                 print('Error: wrong request!')
             # print('listening 2', prompt, end='')
+
+    def offlineMsg(self, t1, name, msg):
+        pass
 
     def sendMsg(self, name, msg):
         with open(self.table, 'r') as csvfile:  # find the ip and port of that name
@@ -71,8 +90,17 @@ class Client(object):
             for r in reader:
                 if r[0] == name:
                     if r[3] == 'online':
-                        m = 'Message ' + self.name + ' ' + msg
+                        t1 = time.time()
+                        m = 'Message ' + str(t1) + ' ' + self.name + ' ' + msg
                         self.socket.sendto(m.encode(), (r[1], int(r[2])))
+                        self.wait_ack = (1, str(t1))
+                        time.sleep(0.5)
+                        if self.wait_ack == (0, 'null'):
+                            print(prompt+'[Message received by %s.]' % name)
+                        else:
+                            print(prompt + '[No ACK from %s, message sent to server.]' % name)
+                            self.wait_ack = (0, 'null')
+                            self.offlineMsg(t1, name, msg)
                         return True
             print(prompt + '[Err: No such user name!]')
 
