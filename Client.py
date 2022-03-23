@@ -45,6 +45,10 @@ class Client(object):
         print('>>> [Server not responding.]\n>>> [Exiting.]')
         return False
 
+    def reg(self):
+        message = "Reg " + self.name
+        self.socket.sendto(message.encode(), (self.serverIp, self.serverPort))
+
     def recv_table(self, tableData):
         """
         tableData: "name1,ip1,port1,status1\nname2,,,\n,,,\n"
@@ -97,20 +101,26 @@ class Client(object):
                 t2 = time.time()
                 if t1 == self.dereg_ack[1] and t2 - float(t1) < 0.5:
                     self.dereg_ack = (0, 'null')
+            elif re.match('ACK SAVE MESSAGE (.+)', msg):
+                m = re.match('ACK SAVE MESSAGE (.+)', msg)
+                print('>>> ' + m.groups()[0])
+            elif re.match('ERROR', msg):
+                print('>>> [' + msg + ']')
             else:
-                print('Error: wrong request!')
+                print('Error: wrong request ' + msg)
             # print('listening 2', prompt, end='')
 
-    def offlineMsg(self, t1, name, msg):
-        pass
+    def saveMsg(self, t1, name, msg):
+        message = "SAVE MESSAGE FROM " + self.name + ' TO ' + name + ' TIME ' + str(t1) + ' MSG ' + msg
+        self.socket.sendto(message.encode(), (self.serverIp, self.serverPort))
 
     def sendMsg(self, name, msg):
         with open(self.table, 'r') as csvfile:  # find the ip and port of that name
+            t1 = time.time()
             reader = csv.reader(csvfile)
             for r in reader:
                 if r[0] == name:
                     if r[3] == 'online':
-                        t1 = time.time()
                         m = 'Message ' + str(t1) + ' ' + self.name + ' ' + msg
                         self.socket.sendto(m.encode(), (r[1], int(r[2])))
                         self.wait_ack = (1, str(t1))
@@ -120,8 +130,10 @@ class Client(object):
                         else:
                             print('>>> [No ACK from %s, message sent to server.]' % name)
                             self.wait_ack = (0, 'null')
-                            self.offlineMsg(t1, name, msg)
-                        return True
+                            self.saveMsg(t1, name, msg)
+                    else:  # the receiver is offline in local table
+                        self.saveMsg(t1, name, msg)
+                    return True
             print('>>> [Err: No such user name!]')
 
     def command(self):
@@ -139,6 +151,8 @@ class Client(object):
                 self.sendMsg(name, msg)
             elif re.match('dereg', cmd):
                 self.dereg()
+            elif re.match('reg', cmd):
+                self.reg()
             else:
                 print('>>> [Err: Canot find the command!]')
             # print('command 2>>> ', end='')
