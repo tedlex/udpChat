@@ -28,6 +28,27 @@ class Server(object):
         self.broadcast_table()
         print('broadcast new table to all active clients!')
 
+    def dereg(self, t1, name, clientAddress):
+        """
+        send ack of dereg back, update the table, and broadcast new table to all active users
+        """
+        ack = "ACK DEREG " + t1
+        self.socket.sendto(ack.encode(), clientAddress)
+        temp = []
+        with open(self.table, 'r') as csvfile:
+            reader = csv.reader(csvfile)
+            for r in reader:
+                if r[0] != name:
+                    temp.append(r)
+                else:
+                    temp.append(r[0:3]+['offline'])
+        with open(self.table, 'w') as csvfile:
+            writer = csv.writer(csvfile)
+            for t in temp:
+                writer.writerow(t)
+        self.broadcast_table()
+        print('broadcast new table to all active clients!')
+
     def send_table_copy(self, clientIp, clientPort):
         with open(self.table, 'r') as csvfile:
             reader = csv.reader(csvfile)
@@ -67,5 +88,9 @@ class Server(object):
                 # the request message is: "Registration clientName clientPort status"
                 clientIp = clientAddress[0]  # we also need to record the client's ip
                 self.registration(name, port, status, clientIp)
+            elif re.match('Dereg ', message):
+                m = re.match('Dereg ([\d.]+) ([\w]+)', message)
+                t1, name = m.groups()
+                self.dereg(t1, name, clientAddress)
             else:
                 print('Error: wrong request!')

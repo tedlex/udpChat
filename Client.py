@@ -7,6 +7,7 @@ import re
 import time
 import datetime
 
+
 class Client(object):
     def __init__(self, name, port, serverIp, serverPort):
         """
@@ -20,6 +21,7 @@ class Client(object):
         self.socket.bind(('', self.port))
         self.table = './data/localTable_' + self.name + '.csv'
         self.wait_ack = (0, 'null')
+        self.dereg_ack = (0, 'null')
 
     def registration(self):
         """
@@ -28,7 +30,20 @@ class Client(object):
         """
         message = 'Registration ' + self.name + ' ' + str(self.port) + ' online'
         self.socket.sendto(message.encode(), (self.serverIp, self.serverPort))
-        print('sent the registration request!')
+        # print('sent the registration request!')
+
+    def dereg(self):
+        for i in range(5):
+            t1 = time.time()
+            message = "Dereg " + str(t1) + ' ' + self.name
+            self.socket.sendto(message.encode(), (self.serverIp, self.serverPort))
+            self.dereg_ack = (1, str(t1))
+            time.sleep(0.5)
+            if self.dereg_ack == (0, 'null'):
+                print('>>> [You are offline. Bye.]')
+                return True
+        print('>>> [Server not responding.]\n>>> [Exiting.]')
+        return False
 
     def recv_table(self, tableData):
         """
@@ -76,6 +91,12 @@ class Client(object):
                 t2 = time.time()
                 if t1 == self.wait_ack[1] and t2 - float(t1) < 0.5:
                     self.wait_ack = (0, 'null')
+            elif re.match('ACK DEREG ([\d.]+)', msg):
+                m = re.match('ACK DEREG ([\d.]+)', msg)
+                t1 = m.groups()[0]
+                t2 = time.time()
+                if t1 == self.dereg_ack[1] and t2 - float(t1) < 0.5:
+                    self.dereg_ack = (0, 'null')
             else:
                 print('Error: wrong request!')
             # print('listening 2', prompt, end='')
@@ -116,6 +137,8 @@ class Client(object):
                 m = re.match('send ([\S]+) (.+)', cmd, flags=re.DOTALL)
                 name, msg = m.groups()
                 self.sendMsg(name, msg)
+            elif re.match('dereg', cmd):
+                self.dereg()
             else:
                 print('>>> [Err: Canot find the command!]')
             # print('command 2>>> ', end='')
