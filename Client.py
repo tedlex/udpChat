@@ -2,6 +2,7 @@ from socket import *
 import csv
 import re
 import time
+import sys
 
 prompt = '\n>>> '
 
@@ -31,6 +32,17 @@ class Client(object):
         """
         message = 'Registration ' + self.name + ' ' + str(self.port) + ' online'
         self.socket.sendto(message.encode(), (self.serverIp, self.serverPort))
+        while True:
+            message, clientAddress = self.socket.recvfrom(2048)
+            msg = message.decode()
+            if re.match('ERROR: name (.+) already in use.', msg):
+                print('[' + msg + ']')
+                sys.exit()
+            elif re.match('ACK REGISTRATION', msg):
+                print('>>> [Welcome, you are registered.]', end='\n>>> ')
+                return True
+
+
         # print('sent the registration request!')
 
     def dereg(self):
@@ -112,8 +124,9 @@ class Client(object):
                 if t2 == self.ack_saveMsg[1] and t3 - float(t2) < 1:
                     self.ack_saveMsg = (0, 'null')
                     print(info + '\n>>> ', end='')
-            elif re.match('ERROR', msg):
-                print('>>> [' + msg + ']')
+            elif re.match('ERROR: name (.+) already in use.', msg):
+                print('[' + msg + ']')
+                sys.exit()
             elif re.match('CHECK ONLINE ([\d.]+)', msg):
                 if self.status == 1:
                     m = 'ACK ' + msg
@@ -148,7 +161,7 @@ class Client(object):
             time.sleep(1)
             if self.ack_saveMsg == (0, 'null'):
                 return True
-        print('[Lost connection: 5 attempts failed.]\n>>> [Failed to save message.]\n>>> [Exit.]')
+        print('[Lost connection: 5 attempts failed.]\n>>> [Failed to save message.]\n>>> [Exit.]', end=prompt)
         return False
 
     def sendMsg(self, name, msg):

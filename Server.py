@@ -32,6 +32,8 @@ class Server(object):
                         err = 'ERROR: name %s already in use.' % name
                         self.socket.sendto(err.encode(), (clientIp, int(port)))
                         return False
+        ack = "ACK REGISTRATION"
+        self.socket.sendto(ack.encode(), (clientIp, int(port)))
         with open(self.table, 'a') as csvfile:
             writer = csv.writer(csvfile)
             writer.writerow([name, clientIp, port, status])
