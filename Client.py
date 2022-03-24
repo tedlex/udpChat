@@ -1,13 +1,10 @@
 from socket import *
-from sys import argv
-import os
 import csv
-import threading
 import re
 import time
-import datetime
 
 prompt = '\n>>> '
+
 
 class Client(object):
     def __init__(self, name, port, serverIp, serverPort):
@@ -25,6 +22,7 @@ class Client(object):
         self.dereg_ack = (0, 'null')
         self.status = 1  # 1. online  0.offline
         self.channel_ack = (0, 'null')
+        self.ack_saveMsg = (0, 'null')
 
     def registration(self):
         """
@@ -81,7 +79,7 @@ class Client(object):
         while True:
             # print('listening 1 >>>', end='')
             message, clientAddress = self.socket.recvfrom(2048)
-            #print('[receive from client]:', clientAddress)
+            # print('[receive from client]:', clientAddress)
             # messages = message.decode().split(' ')
             msg = message.decode()
             # if messages[0] == 'table_copy':  # the request message is: "Registration clientName clientPort status"
@@ -107,9 +105,13 @@ class Client(object):
                 t2 = time.time()
                 if t1 == self.dereg_ack[1] and t2 - float(t1) < 0.5:
                     self.dereg_ack = (0, 'null')
-            elif re.match('ACK SAVE MESSAGE (.+)', msg):
-                m = re.match('ACK SAVE MESSAGE (.+)', msg)
-                print(m.groups()[0] + '\n>>> ', end='')
+            elif re.match('ACK SAVE MESSAGE ([\d.]+) (.+)', msg):
+                m = re.match('ACK SAVE MESSAGE ([\d.]+) (.+)', msg)
+                t2, info = m.groups()
+                t3 = time.time()
+                if t2 == self.ack_saveMsg[1] and t3 - float(t2) < 1:
+                    self.ack_saveMsg = (0, 'null')
+                    print(info + '\n>>> ', end='')
             elif re.match('ERROR', msg):
                 print('>>> [' + msg + ']')
             elif re.match('CHECK ONLINE ([\d.]+)', msg):
@@ -129,7 +131,7 @@ class Client(object):
             elif re.match('FORWARD FROM ([\w]+) TIME ([\d.]+) MSG (.+)', msg, flags=re.DOTALL):
                 m = re.match('FORWARD FROM ([\w]+) TIME ([\d.]+) MSG (.+)', msg, flags=re.DOTALL)
                 sender, t2, ms = m.groups()
-                print('>>> Channel Message ' + sender + ': ' + ms)
+                print('Channel Message ' + sender + ': ' + ms, end=prompt)
                 ack = 'ACK FORWARD ' + t2 + ' ' + self.name
                 self.socket.sendto(ack.encode(), (self.serverIp, self.serverPort))
             else:
@@ -137,8 +139,17 @@ class Client(object):
             # print('listening 2', prompt, end='')
 
     def saveMsg(self, t1, name, msg):
-        message = "SAVE MESSAGE FROM " + self.name + ' TO ' + name + ' TIME ' + str(t1) + ' MSG ' + msg
-        self.socket.sendto(message.encode(), (self.serverIp, self.serverPort))
+        for i in range(5):
+            t2 = time.time()
+            message = "SAVE MESSAGE FROM " + self.name + ' TO ' + name + ' TIME ' + str(t1) + ' T2 ' + str(t2) + ' MSG ' + msg
+            self.ack_saveMsg = (1, str(t2))
+            #print(message)
+            self.socket.sendto(message.encode(), (self.serverIp, self.serverPort))
+            time.sleep(1)
+            if self.ack_saveMsg == (0, 'null'):
+                return True
+        print('[Lost connection: 5 attempts failed.]\n>>> [Failed to save message.]\n>>> [Exit.]')
+        return False
 
     def sendMsg(self, name, msg):
         with open(self.table, 'r') as csvfile:  # find the ip and port of that name
@@ -146,7 +157,7 @@ class Client(object):
             reader = csv.reader(csvfile)
             for r in reader:
                 if r[0] == name:
-                    #if r[3] == 'online':
+                    # if r[3] == 'online':
                     m = 'Message ' + str(t1) + ' ' + self.name + ' ' + msg
                     self.socket.sendto(m.encode(), (r[1], int(r[2])))
                     self.wait_ack = (1, str(t1))
@@ -157,8 +168,8 @@ class Client(object):
                         print('[No ACK from %s, message sent to server.]' % name, end=prompt)
                         self.wait_ack = (0, 'null')
                         self.saveMsg(t1, name, msg)
-                    #else:  # the receiver is offline in local table
-                        #self.saveMsg(t1, name, msg)
+                    # else:  # the receiver is offline in local table
+                    # self.saveMsg(t1, name, msg)
                     return True
             print('>>> [Err: No such user name!]')
 
@@ -170,13 +181,13 @@ class Client(object):
             self.channel_ack = (1, str(t1))
             time.sleep(0.5)
             if self.channel_ack == (0, 'null'):
-                print('[ Message received by server.]', end=prompt)
+                print('[Message received by server.]', end=prompt)
                 return True
-        print('[Server not responding.]')
+        print('[Server not responding.]', end=prompt)
         return False
 
     def command(self):
-        #print('commanding!')
+        # print('commanding!')
         while True:
             # print('command 1 >>> ', end='')
             cmd = input('')
@@ -201,4 +212,3 @@ class Client(object):
             else:
                 print('[Err: Canot find the command!]', end=prompt)
             # print('command 2>>> ', end='')
-

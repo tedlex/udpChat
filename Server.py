@@ -1,5 +1,4 @@
 from socket import *
-from sys import argv
 import os
 import csv
 import threading
@@ -143,13 +142,13 @@ class Server(object):
             self.check_online_ack = (0, 'null')
             return False
 
-    def saveMsg(self, sender, receiver, t, msg, clientAddress):
+    def saveMsg(self, sender, receiver, t, t2, msg, clientAddress):
         """
         check if the receiver is indeed offline. If yes, save the msg and send ack. If not,
         send sender the error info and the table.
         """
         if self.check_online(receiver):  # the receiver is online
-            err = "ACK SAVE MESSAGE [Client %s exists!]" % receiver
+            err = "ACK SAVE MESSAGE " + str(t2) + " [Client %s exists!]" % receiver
             self.socket.sendto(err.encode(), clientAddress)
             _, _, table_status = self.get_info(receiver)
             if table_status == 'offline':
@@ -160,7 +159,7 @@ class Server(object):
             with open(f, 'a') as csvfile:
                 writter = csv.writer(csvfile)
                 writter.writerow([sender, t, msg])
-            ack = "ACK SAVE MESSAGE [Messages received by the server and saved.]"
+            ack = "ACK SAVE MESSAGE " + str(t2) + " [Messages received by the server and saved.]"
             self.socket.sendto(ack.encode(), clientAddress)
             _, _, table_status = self.get_info(receiver)
             if table_status == 'online':
@@ -185,10 +184,11 @@ class Server(object):
             with open(self.table, 'r') as csvfile:
                 reader = csv.reader(csvfile)
                 for r in reader:
-                    if r[3] == 'online':
-                        online_list.append((r[0], r[1], r[2]))
-                    else:
-                        offline_list.append((r[0], r[1], r[2]))
+                    if r[0] != name:
+                        if r[3] == 'online':
+                            online_list.append((r[0], r[1], r[2]))
+                        else:
+                            offline_list.append((r[0], r[1], r[2]))
             #print('online list', online_list)
             #print('offline list', offline_list)
             # forward to all online clients
@@ -206,11 +206,14 @@ class Server(object):
                     check_list.append((c[0], c[1], c[2]))
             #print('未收到ack名单：check list', check_list)
             # write into offline files
+            update = 0
             for c in check_list:
                 if not self.check_online(c[0]):
+                    update = 1
                     self.write_status(c[0], 'offline')
                     offline_list.append((c[0], c[1], c[2]))
-            self.broadcast_table()
+            if update == 1:
+                self.broadcast_table()
             for c in offline_list:
                 f = self.offlineMsg + '_' + c[0] + '.csv'
                 with open(f, 'a') as csvfile:
@@ -239,10 +242,10 @@ class Server(object):
                 m = re.match('Reg ([\w]+)', message)
                 name = m.groups()[0]
                 self.reg(name, clientAddress)
-            elif re.match('SAVE MESSAGE FROM ([\w]+) TO ([\w]+) TIME ([\d.]+) MSG (.+)', message, flags=re.DOTALL):
-                m = re.match('SAVE MESSAGE FROM ([\w]+) TO ([\w]+) TIME ([\d.]+) MSG (.+)', message, flags=re.DOTALL)
-                sender, receiver, t, msg = m.groups()
-                self.saveMsg(sender, receiver, t, msg, clientAddress)
+            elif re.match('SAVE MESSAGE FROM ([\w]+) TO ([\w]+) TIME ([\d.]+) T2 ([\d.]+) MSG (.+)', message, flags=re.DOTALL):
+                m = re.match('SAVE MESSAGE FROM ([\w]+) TO ([\w]+) TIME ([\d.]+) T2 ([\d.]+) MSG (.+)', message, flags=re.DOTALL)
+                sender, receiver, t, t2, msg = m.groups()
+                self.saveMsg(sender, receiver, t, t2, msg, clientAddress)
             elif re.match('ACK CHECK ONLINE ([\d.]+)', message):
                 m = re.match('ACK CHECK ONLINE ([\d.]+)', message)
                 t1 = m.groups()[0]
