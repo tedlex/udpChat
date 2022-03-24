@@ -21,23 +21,32 @@ def check_port(port):
         return False
 
 
-if not os.path.exists('./data'):
-    os.mkdir('./data')
-
-prompt = ">>> "
+#prompt = "\n>>> "
+datafile = './data'
 
 if argv[1] == '-s':  # 检查参数个数
-    print('server mode!')
+    #print('server mode!')
     serverPort = argv[2]  # 检查port是否已经占用，以及范围
     if check_port(serverPort):
-        print('server port:', serverPort)
+        if os.path.exists(datafile):
+            print('[Warning: old version data files exists.]')
+            for f in os.listdir(datafile):
+                os.remove(os.path.join(datafile, f))
+            print('[Old version data files  removed.]')
+        else:
+            os.mkdir(datafile)
+        #print('server port:', serverPort)
         s = Server(serverPort)
-        print('Server instance made!')
+        #print('Server instance made!')
+        #x3 = threading.Thread(target=s.listening)
         s.listening()
+        #x3.start()
 
 
 elif argv[1] == '-c':
-    print('client mode!')
+    #print('client mode!')
+    if not os.path.exists(datafile):
+        os.mkdir(datafile)
     clientName = argv[2]
     serverIp = argv[3]  # 检查ip地址
     serverPort = argv[4]
@@ -45,7 +54,7 @@ elif argv[1] == '-c':
     if check_port(clientPort):
         c = Client(clientName, clientPort, serverIp, serverPort)
         c.registration()
-        print(prompt + '[Welcome, you are registered.]')
+        print('>>> [Welcome, you are registered.]', end='\n>>> ')
         # c.listening()
         x1 = threading.Thread(target=c.listening)
         x2 = threading.Thread(target=c.command)

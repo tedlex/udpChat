@@ -16,6 +16,8 @@ class Server(object):
         self.table = './data/serverTable.csv'
         self.offlineMsg = './data/offline'
         self.check_online_ack = (0, 'null')
+        self.last_channel_t0 = 0
+        self.ack_channel_recv = (0, [])
 
     def registration(self, name, port, status, clientIp):
         """
@@ -34,10 +36,10 @@ class Server(object):
         with open(self.table, 'a') as csvfile:
             writer = csv.writer(csvfile)
             writer.writerow([name, clientIp, port, status])
-        print('add client to table')
+        #print('add client to table')
         # self.send_table_copy(clientIp, int(info[1]))
         self.broadcast_table()
-        print('broadcast new table to all active clients!')
+        #print('broadcast new table to all active clients!')
 
     def dereg(self, t1, name, clientAddress):
         """
@@ -65,7 +67,7 @@ class Server(object):
         self.broadcast_table()
         f = self.offlineMsg + '_' + name + '.csv'
         if os.path.exists(f):
-            msg = 'OFFLINE MESSAGE >>> You Have Messages.'
+            msg = 'OFFLINE MESSAGE You Have Messages.'
             with open(f, 'r') as csvfile:
                 reader = csv.reader(csvfile)
                 for r in reader:
@@ -128,11 +130,16 @@ class Server(object):
         t1 = time.time()
         message = "CHECK ONLINE " + str(t1)
         self.socket.sendto(message.encode(), (ip, int(port)))
+        print('检查是否在线：', message)
         self.check_online_ack = (1, str(t1))
+        print('开始sleep')
         time.sleep(0.5)
+        print('结束sleep')
         if self.check_online_ack == (0, 'null'):
+            print(name, '在线')
             return True
         else:
+            print(name, '不在线')
             self.check_online_ack = (0, 'null')
             return False
 
@@ -160,11 +167,61 @@ class Server(object):
                 self.write_status(receiver, 'offline')
                 self.broadcast_table()
 
+    def channelMsg(self, name, t0, t1, msg, clientAddress):
+        """
+        send ack to the sender
+        check if the msg has been forwarded by checking self.last_channel_t0. If not,
+        forward msg to online clients except for sender (wait ack)
+        and write into offline files (duplicate)
+        """
+        ack = 'ACK CHANNEL SENDER T0 ' + str(t0) + ' T1 ' + str(t1)
+        self.socket.sendto(ack.encode(), clientAddress)
+        if float(t0) > self.last_channel_t0:  # it's a new channel msg
+            #print('转发并写入', name, msg)
+            self.last_channel_t0 = float(t0)
+            online_list = []
+            offline_list = []
+            check_list = []  # online in server table but no ack back
+            with open(self.table, 'r') as csvfile:
+                reader = csv.reader(csvfile)
+                for r in reader:
+                    if r[3] == 'online':
+                        online_list.append((r[0], r[1], r[2]))
+                    else:
+                        offline_list.append((r[0], r[1], r[2]))
+            #print('online list', online_list)
+            #print('offline list', offline_list)
+            # forward to all online clients
+            t2 = time.time()
+            m = "FORWARD FROM " + name + ' TIME ' + str(t2) + ' MSG ' + msg
+            self.ack_channel_recv = (str(t2), [])
+            #print('ack_channel_recv', self.ack_channel_recv)
+            for c in online_list:
+                self.socket.sendto(m.encode(), (c[1], int(c[2])))
+            #print('sleep 1 开始')
+            time.sleep(0.5)
+            #print('sleep 1 结束')
+            for c in online_list:
+                if c[0] not in self.ack_channel_recv[1]:
+                    check_list.append((c[0], c[1], c[2]))
+            #print('未收到ack名单：check list', check_list)
+            # write into offline files
+            for c in check_list:
+                if not self.check_online(c[0]):
+                    self.write_status(c[0], 'offline')
+                    offline_list.append((c[0], c[1], c[2]))
+            self.broadcast_table()
+            for c in offline_list:
+                f = self.offlineMsg + '_' + c[0] + '.csv'
+                with open(f, 'a') as csvfile:
+                    writter = csv.writer(csvfile)
+                    writter.writerow(['Channel Message ' + name, t0, msg])
+
     def listening(self):
         print('server listening')
         while True:
             message, clientAddress = self.socket.recvfrom(2048)
-            print('receive from client:', clientAddress)
+            #print('receive from client:', clientAddress)
             # messages = message.decode().split(' ')
             message = message.decode()
             if re.match('Registration ([\w]+) ([\d]+) (online|offline)', message):
@@ -190,7 +247,24 @@ class Server(object):
                 m = re.match('ACK CHECK ONLINE ([\d.]+)', message)
                 t1 = m.groups()[0]
                 t2 = time.time()
+                #print('收到 ACK CHECK ONLINE, t2 =', t2, 't2-t1 =', t2-float(t1))
                 if t1 == self.check_online_ack[1] and t2 - float(t1) < 0.5:
                     self.check_online_ack = (0, 'null')
+            elif re.match('CHANNEL MESSAGE FROM ([\w]+) T ([\d.]+) TIME ([\d.]+) MSG (.+)', message, flags=re.DOTALL):
+                m = re.match('CHANNEL MESSAGE FROM ([\w]+) T ([\d.]+) TIME ([\d.]+) MSG (.+)', message, flags=re.DOTALL)
+                name, t0, t1, msg = m.groups()
+                xx = threading.Thread(target=self.channelMsg, args=(name, t0, t1, msg, clientAddress))
+                #self.channelMsg(name, t0, t1, msg, clientAddress)
+                xx.start()
+            elif re.match('ACK FORWARD ([\d.]+) ([\w]+)', message):
+                m = re.match('ACK FORWARD ([\d.]+) ([\w]+)', message)
+                t2, receiver = m.groups()
+                t3 = time.time()
+                #print('收到', message, '此时 t3=',t3, 't3-t2=', t3-float(t2))
+                if t2 == self.ack_channel_recv[0] and t3 - float(t2) < 0.5:
+                    self.ack_channel_recv[1].append(receiver)
             else:
-                print('Error: wrong request!')
+                print('Error: wrong request ' + message)
+
+
+
