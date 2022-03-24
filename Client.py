@@ -209,19 +209,31 @@ class Client(object):
             if cmd == '':
                 pass
             # elif cmd.split()[0] == 'send':
-            elif re.match('send ([\S]+) (.+)', cmd, flags=re.DOTALL):
-                m = re.match('send ([\S]+) (.+)', cmd, flags=re.DOTALL)
-                name, msg = m.groups()
-                self.sendMsg(name, msg)
-            elif re.match('dereg', cmd):
-                self.dereg()
-            elif re.match('reg', cmd):
-                self.reg()
-            elif re.match('send_all (.+)', cmd):
-                m = re.match('send_all (.+)', cmd)
-                msg = m.groups()[0]
-                t0 = time.time()
-                self.channelMsg(msg, t0)
             else:
-                print('[Err: Canot find the command!]', end=prompt)
+                if self.status == 0:
+                    if re.match('reg', cmd):
+                        self.reg()
+                    else:
+                        print('[Can only reg when offline.]', end=prompt)
+                else:
+                    if re.match('send ([\S]+) (.+)', cmd, flags=re.DOTALL):
+                        m = re.match('send ([\S]+) (.+)', cmd, flags=re.DOTALL)
+                        name, msg = m.groups()
+                        self.sendMsg(name, msg)
+                    elif re.match('dereg *([\w]*)', cmd):
+                        m = re.match('dereg *([\w]*)', cmd)
+                        name = m.groups()[0]
+                        if name == '' or name == self.name:
+                            self.dereg()
+                        else:
+                            print('[ERROR: You can only dereg youself.]', end=prompt)
+                    elif re.match('reg', cmd):
+                        print('[Already online.]', end=prompt)
+                    elif re.match('send_all (.+)', cmd):
+                        m = re.match('send_all (.+)', cmd)
+                        msg = m.groups()[0]
+                        t0 = time.time()
+                        self.channelMsg(msg, t0)
+                    else:
+                        print('[Err: Canot find the command!]', end=prompt)
             # print('command 2>>> ', end='')
